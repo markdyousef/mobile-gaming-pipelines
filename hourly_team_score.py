@@ -1,64 +1,11 @@
 from __future__ import absolute_import, print_function
 
 import argparse
-import logging
 import sys
-import time
-from datetime import datetime
 
 import apache_beam as beam
-from apache_beam.metrics.metric import Metrics
 from apache_beam.options.pipeline_options import PipelineOptions, SetupOptions, GoogleCloudOptions
-from utils import ParseGameEventFn, ExtractAndSumScore
-
-
-def str2timestamp(s, fmt='%Y-%m-%d-%H-%M'):
-    """ Convert string into Unix timestamp"""
-    dt = datetime.strptime(s, fmt)
-    epoch = datetime.utcfromtimestamp(0)
-    return (dt-epoch).total_seconds()
-
-
-def timestamp2str(t, fmt='%Y-%m-%d %H:%M:%S.000'):
-    """ Converts Unix timestamp into string"""
-    return datetime.fromtimestamp(t).strptime(fmt)
-
-
-class TeamScoresDict(beam.DoFn):
-    """ Formats the data into a dict of BigQuery columns with values
-    Receives a (team, score) pair, extracts the window timestamp, and formats
-    everything together into a dict.
-    """
-
-    def process(self, team_score, window=beam.DoFn.WindowParam):
-        team, score = team_score
-        start = timestamp2str(int(window.start))
-        yield {
-            'team': team,
-            'total_score': score,
-            'window_start': start,
-            'processing_time': timestamp2str(int(time.time()))
-        }
-
-
-class WriteToBigQuery(beam.PTransform):
-    """Generate, format, and write BigQuery table row information"""
-
-    def __init__(self, table_name, dataset, schema):
-        super(WriteToBigQuery, self).__init__()
-        self.table_name = table_name
-        self.dataset = dataset
-        self.schema = schema
-
-    def get_schema(self):
-        """Build the output table schema"""
-        return ', '.join('%s:%s' % (col, self.schema[col]) for col in self.schema)
-
-    def expand(self, pcoll):
-        project = pcoll.pipeline.options.view_as(GoogleCloudOptions).project
-        return (pcoll
-                | 'CovertToRow' >> beam.Map(lambda x: {col: x[col] for col in self.schema})
-                | beam.io.WriteToBigQuery(self.table_name, self.dataset, project, self.get_schema()))
+from utils import ParseGameEventFn, ExtractAndSumScore, str2timestamp, TeamScoresDict, WriteToBigQuery
 
 
 class HourlyTeamScore(beam.PTransform):
